@@ -166,6 +166,7 @@ class JLanguageHelper
 					$languages['default'] = $db->loadObjectList();
 					$languages['sef'] = array();
 					$languages['lang_code'] = array();
+					$languages['domain'] = array();
 
 					if (isset($languages['default'][0]))
 					{
@@ -173,6 +174,7 @@ class JLanguageHelper
 						{
 							$languages['sef'][$lang->sef] = $lang;
 							$languages['lang_code'][$lang->lang_code] = $lang;
+							$languages['domain'][$lang->domain] = $lang;
 						}
 					}
 

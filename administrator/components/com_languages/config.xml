@@ -1,5 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
 <config>
+	<fieldset name="component"
+		label="COM_LANGUAGES_FIELDSET_CONFIG_CLIENT_OPTIONS_LABEL"
+		description="COM_LANGUAGES_FIELDSET_CONFIG_CLIENT_OPTIONS_DESC">	
+		<field name="mode_domain" 
+			type="list"
+			label="COM_LANGUAGES_FIELD_MODE_DOMAIN_TITLE"
+			description="COM_LANGUAGES_FIELD_MODE_DOMAIN_DESC"
+			default="0"
+			class="btn-group">
+			<option value="0">COM_LANGUAGES_MODE_CLASSIC</option>
+			<option value="1">COM_LANGUAGES_MODE_DOMAIN</option>
+			<option value="2">COM_LANGUAGES_MODE_DOMAIN_SEF</option>
+		</field>
+
+		<field
+			name="language_domaine_exclusive"
+			type="radio"
+			class="btn-group btn-group-yesno"
+			default="0"
+			label="COM_LANGUAGES_FIELD_LANGUAGE_DOMAINE_EXCLUSIVE_TITLE"
+			description="COM_LANGUAGES_FIELD_LANGUAGE_DOMAINE_EXCLUSIVE_DESC">
+			<option
+				value="1">JYES</option>
+			<option
+				value="0">JNO</option>
+		</field>
+	</fieldset>
+
 	<fieldset
 		name="permissions"
 		label="JConfig_Permissions_Label"

@@ -36,6 +36,8 @@ JHtml::_('formbehavior.chosen', 'select');
 			<?php echo $this->form->renderField('title_native'); ?>
 			<?php echo $this->form->renderField('lang_code'); ?>
 			<?php echo $this->form->renderField('sef'); ?>
+			<?php echo $this->form->renderField('domain'); ?>
+			<?php echo $this->form->renderField('remove_sef'); ?>
 			<div class="control-group">
 					<div class="control-label">
 						<?php echo $this->form->getLabel('image'); ?>

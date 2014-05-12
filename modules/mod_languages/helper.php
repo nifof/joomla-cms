@@ -90,6 +90,14 @@ abstract class ModLanguagesHelper
 			{
 				unset($languages[$i]);
 			}
+			//do not display language from exclusive domains
+			elseif (
+			JComponentHelper::getParams('com_languages')->get('language_domaine_exclusive', '1') == 1
+			&&
+			JUri::getInstance()->getHost() != $language->domain
+			){
+				unset($languages[$i]);
+			}
 			else {
 				$language->active = $language->lang_code == $lang->getTag();
 
@@ -128,6 +136,15 @@ abstract class ModLanguagesHelper
 				else
 				{
 					$language->link = JRoute::_('&Itemid=' . $homes['*']->id);
+				}
+				
+				//NEW
+				if(JComponentHelper::getParams('com_languages')->get('mode_domain', MODE_LANGUAGE_SEF) > MODE_LANGUAGE_SEF ){
+					$lang_codes=JLanguageHelper::getLanguages('lang_code');
+					if(isset($lang_codes) && isset($lang_codes[$language->lang_code]) && isset($lang_codes[$language->lang_code]->domain) ){
+						$link= (substr($language->link, 0, 1 ) !== "/") ? '/' . $language->link : $language->link;
+						$language->link = JUri::getInstance()->getScheme() . '://' . $lang_codes[$language->lang_code]->domain . $link;
+					}
 				}
 			}
 		}

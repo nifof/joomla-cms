@@ -9,6 +9,10 @@
 
 defined('_JEXEC') or die;
 
+define(MODE_LANGUAGE_SEF, '0');
+define(MODE_LANGUAGE_DOMAIN, '1');
+define(MODE_LANGUAGE_DOMAIN_SEF, '2');
+
 JLoader::register('MenusHelper', JPATH_ADMINISTRATOR . '/components/com_menus/helpers/menus.php');
 
 JLoader::register('MultilangstatusHelper', JPATH_ADMINISTRATOR . '/components/com_languages/helpers/multilangstatus.php');
@@ -37,8 +41,25 @@ class PlgSystemLanguageFilter extends JPlugin
 	protected static $default_sef;
 
 	protected static $cookie;
+	
+	//NEW
+	protected static $mode_domain;
+	//NEW
+	protected static $mode_domain_sef;
+	//NEW
+	protected static $mode_domain_exclusive;
+	//NEW
+	protected static $domains;
+	//NEW
+	protected static $default_domain_sef;
+	
+	
 
 	private static $_user_lang_code;
+	
+	
+	
+	
 
 	/**
 	 * Constructor.
@@ -58,7 +79,7 @@ class PlgSystemLanguageFilter extends JPlugin
 		if (!self::$default_lang)
 		{
 			$app = JFactory::getApplication();
-			$router = $app::getRouter();
+			$router = $app->getRouter();
 
 			if ($app->isSite())
 			{
@@ -69,21 +90,44 @@ class PlgSystemLanguageFilter extends JPlugin
 				self::$default_lang = JComponentHelper::getParams('com_languages')->get('site', 'en-GB');
 				self::$default_sef 	= self::$lang_codes[self::$default_lang]->sef;
 				self::$homes		= MultilangstatusHelper::getHomes();
+				
+				$mode_language_domain=JComponentHelper::getParams('com_languages')->get('mode_domain', MODE_LANGUAGE_SEF);
+				
+				self::$mode_domain = ($mode_language_domain == MODE_LANGUAGE_DOMAIN) ? true : false;
+				self::$mode_domain_sef = ($mode_language_domain == MODE_LANGUAGE_DOMAIN_SEF) ? true : false;
+				
+				self::$mode_domain_exclusive = (JComponentHelper::getParams('com_languages')->get('language_domaine_exclusive', '1') == 1) ? true : false;
+				
+				//NEW
+				if(self::$mode_domain){
+					//in mode domain, each domain is unique as sef should be.
+					self::$domains 	= JLanguageHelper::getLanguages('domain');
+				}
 
 				$user = JFactory::getUser();
 				$levels = $user->getAuthorisedViewLevels();
-
-				foreach (self::$sefs as $sef => &$language)
-				{
-					if (isset($language->access) && $language->access && !in_array($language->access, $levels))
-					{
-						unset(self::$sefs[$sef]);
-					}
-				}
-
+				
+				//NEW Moved to use $uri 
 				$app->setLanguageFilter(true);
 				jimport('joomla.environment.uri');
 				$uri = JUri::getInstance();
+
+				foreach (self::$sefs as $sef => &$language)
+				{
+					if (
+					(isset($language->access) && $language->access && !in_array($language->access, $levels))
+					|| 
+					//NEW : for exclusive domains : don't keep languages from other domains
+					(self::$mode_domain_exclusive && $language->domain != $uri->getHost())
+					)
+					{
+						unset(self::$sefs[$sef]);
+					}
+					//NEW if it's a language from domain and it has sef to be removed => this is default sef for domain
+					else if(self::$mode_domain_sef && (int)$language->remove_sef==1 && $language->domain == $uri->getHost()){
+						self::$default_domain_sef=$sef;
+					}
+				}
 
 				if (self::$mode_sef)
 				{
@@ -102,7 +146,18 @@ class PlgSystemLanguageFilter extends JPlugin
 
 					if (!empty($parts) && empty($sef))
 					{
-						$sef = reset($parts);
+						//NEW
+						if(self::$mode_domain){
+							//in mode domain, sef are directly taken from domain
+							$sef = self::$domains[$uri->getHost()]->sef;
+						}else if(self::$mode_domain_sef){
+							//if reset(parts) does not contain a sef, sef = default sef for domain.
+							$sef = reset($parts);
+							$sef = isset(self::$sefs[$sef]) ? $sef : self::$default_domain_sef;
+						}
+						else{
+							$sef = reset($parts);
+						}
 					}
 				}
 				else
@@ -152,7 +207,7 @@ class PlgSystemLanguageFilter extends JPlugin
 		{
 			self::$tag = JFactory::getLanguage()->getTag();
 
-			$router = $app::getRouter();
+			$router = $app->getRouter();
 
 			// Attach build rules for language SEF.
 			$router->attachBuildRule(array($this, 'buildRule'));
@@ -243,8 +298,17 @@ class PlgSystemLanguageFilter extends JPlugin
 		if (self::$mode_sef)
 		{
 			$uri->delVar('lang');
-
-			if ($this->params->get('remove_default_prefix', 0) == 0
+			//NEW
+			//If mode domain : dont add sef to domain where to remove sef
+			if (
+				(self::$mode_domain || self::$mode_domain_sef)
+				&&
+				(int)self::$sefs[$sef]->remove_sef == 1
+			){
+				$uri->setPath($uri->getPath());
+			}
+			elseif (
+				$this->params->get('remove_default_prefix', 0) == 0
 				|| $sef != self::$default_sef
 				|| $sef != self::$lang_codes[self::$tag]->sef
 				|| $this->params->get('detect_browser', 1) && JLanguageHelper::detectLanguage() != self::$tag && !self::$cookie)
@@ -254,6 +318,12 @@ class PlgSystemLanguageFilter extends JPlugin
 			else
 			{
 				$uri->setPath($uri->getPath());
+			}
+			
+			//NEW
+			//if mode domain : change host
+			if(self::$mode_domain || self::$mode_domain_sef){
+				$uri->setHost(self::$lang_codes[self::$tag]->domain);
 			}
 		}
 		else
@@ -301,7 +371,129 @@ class PlgSystemLanguageFilter extends JPlugin
 			// Redirect only if not in post.
 			if (!empty($lang_code) && ($app->input->getMethod() != "POST" || count($app->input->post) == 0))
 			{
-				if ($this->params->get('remove_default_prefix', 0) == 0)
+				//NEW
+				//mode domain : each domain is unique
+				if(self::$mode_domain){
+					//$sef could contain a language part. Use a second var to compare
+					$sef_domain = isset(self::$domains[$uri->getHost()]->sef) ? self::$domains[$uri->getHost()]->sef : self::$default_sef;					
+					// redirect if sef from domain does not exists and language is not the default one
+					if (!isset(self::$sefs[$sef_domain]) && $lang_code != self::$default_lang)
+					{
+						$domain = isset(self::$lang_codes[$lang_code]) ? self::$lang_codes[$lang_code]->domain : self::$default_domain;
+						$uri->setPath($uri->getPath);
+						$uri->setHost($domain);
+						
+						if ($app->getCfg('sef_rewrite'))
+						{
+							$app->redirect($uri->base().$uri->toString(array('path', 'query', 'fragment')));
+						}
+						else
+						{
+							$path = $uri->toString(array('path', 'query', 'fragment'));
+							$app->redirect($uri->base().'index.php'.($path ? ('/' . $path) : ''));
+						}
+					}
+					// redirect if sef is in domain and in URI and should not be in it
+					elseif(
+						isset(self::$sefs[$sef_domain]) 
+						&& isset(self::$sefs[$sef])
+						&& (int)self::$sefs[$sef]->remove_sef === 1
+					)
+					{
+						array_shift($parts);
+						$uri->setPath(implode('/', $parts));
+						
+						//if I have a different sef than domain, redirect to domain
+						if(self::$sefs[$sef_domain]->sef !== self::$sefs[$sef]->sef){
+							$uri->setHost(self::$sefs[$sef]->domain);
+						}
+
+
+						if ($app->getCfg('sef_rewrite'))
+						{
+							//this is a 301 redirect
+							$app->redirect($uri->toString(array('scheme','host')).'/'.$uri->toString(array('path', 'query', 'fragment')),true);
+						}
+						else
+						{
+							$path = $uri->toString(array('path', 'query', 'fragment'));
+							//this is a 301 redirect
+							$app->redirect($uri->toString(array('scheme','host')).'index.php'.($path ? ('/' . $path) : ''),true);
+						}
+					}
+					// redirect if sef is in domain and not in URI and should be in it
+					elseif(
+						isset(self::$sefs[$sef_domain]) 
+						&& !isset(self::$sefs[$sef])
+						&& (int)self::$sefs[$sef_domain]->remove_sef === 0
+					)
+					{
+						
+						$uri->setPath($sef_domain . '/' . $path);
+
+						if ($app->getCfg('sef_rewrite'))
+						{
+							//this is a 301 redirect
+							$app->redirect($uri->base() . $uri->toString(array('path', 'query', 'fragment')),true);
+						}
+						else
+						{
+							//this is a 301 redirect
+							$path = $uri->toString(array('path', 'query', 'fragment'));
+							$app->redirect($uri->base() . 'index.php'.($path ? ('/' . $path) : ''),true);
+						}
+					}
+				}
+				//NEW
+				//mode comin sef. Sef are used as usual, but some cases need redirections
+				elseif (self::$mode_domain_sef)
+				{
+					// redirect if sef is in domain and in URI and should not be in it
+					if (isset(self::$sefs[$sef]) && (int)self::$sefs[$sef]->remove_sef === 1){
+						
+						array_shift($parts);
+						$uri->setPath(implode('/', $parts));
+						$uri->setHost(self::$sefs[$sef]->domain);
+						
+						if ($app->getCfg('sef_rewrite'))
+						{
+							//this is a 301 redirect
+							$app->redirect($uri->toString(array('scheme','host')).'/'.$uri->toString(array('path', 'query', 'fragment')),true);
+						}
+						else
+						{
+							$path = $uri->toString(array('path', 'query', 'fragment'));
+							//this is a 301 redirect
+							$app->redirect($uri->toString(array('scheme','host')).'index.php'.($path ? ('/' . $path) : ''),true);
+						}
+					}
+					//if sef does not exists, we are in default domain, or we try to access a sef from another domain
+					else if (!isset(self::$sefs[$sef])){
+
+						//try to find if sef exists in other domains
+						$tmp_sefs = JLanguageHelper::getLanguages('sef');
+						
+						//indeed there is one.
+						if(isset($tmp_sefs[$sef])){
+							$uri->setPath($uri->getPath);
+							$uri->setHost($tmp_sefs[$sef]->domain);
+						
+							if ($app->getCfg('sef_rewrite'))
+							{
+								//this is a 301 redirect
+								$app->redirect($uri->toString(array('scheme','host')).'/'.$uri->toString(array('path', 'query', 'fragment')),true);
+							}
+							else
+							{
+								$path = $uri->toString(array('path', 'query', 'fragment'));
+								//this is a 301 redirect
+								$app->redirect($uri->toString(array('scheme','host')).'index.php'.($path ? ('/' . $path) : ''),true);
+							}
+						}
+					}
+					
+				}
+				elseif ($this->params->get('remove_default_prefix', 0) == 0)
 				{
 					// Redirect if sef does not exist.
 					if (!isset(self::$sefs[$sef]))
@@ -375,12 +567,38 @@ class PlgSystemLanguageFilter extends JPlugin
 
 			if (!isset(self::$sefs[$sef]))
 			{
-				$sef = isset(self::$lang_codes[$lang_code]) ? self::$lang_codes[$lang_code]->sef : self::$default_sef;
+				//NEW
+				if(self::$mode_domain_sef){
+					//try to find if sef exists in other domains
+					$tmp_sefs = JLanguageHelper::getLanguages('sef');
+					
+					//if I cannot find a sef in other domain, switch back to default
+					if(!isset($tmp_sefs[$sef])){
+						$sef=self::$default_domain_sef;
+					}else{
+						//else OK : I have a sef in another domain
+						//TODO not elegant
+						$domain = $tmp_sefs[$sef]->domain;
+					}
+				}else{
+					$sef = isset(self::$lang_codes[$lang_code]) ? self::$lang_codes[$lang_code]->sef : self::$default_sef;
+				}
+				
 				$uri->setVar('lang', $sef);
 
 				if ($app->input->getMethod() != "POST" || count($app->input->post) == 0)
 				{
-					$app->redirect(JUri::base(true) . '/index.php?' . $uri->getQuery());
+					//NEW	
+					//lets redirect to the right default host				
+					if(self::$mode_domain || self::$mode_domain_sef){
+						//TODO not elegant
+						$domain = empty($domain) ? self::$sefs[$sef]->domain : $domain;
+						$uri->setHost($domain);
+						$app->redirect($uri->toString(array('scheme','host')).'/index.php?'.$uri->getQuery());
+					//NEW
+					}else{
+						$app->redirect(JUri::base(true).'/index.php?'.$uri->getQuery());
+					}
 				}
 			}
 		}
@@ -623,14 +841,27 @@ class PlgSystemLanguageFilter extends JPlugin
 			{
 				foreach (JLanguageHelper::getLanguages() as $language)
 				{
-					if (!JLanguage::exists($language->lang_code))
+					if (
+					!JLanguage::exists($language->lang_code) 
+					//if language is disabled because of user rights
+					|| !isset(self::$sefs[self::$lang_codes[$language->lang_code]->sef])
+					)
 					{
 						continue;
 					}
+					
+					//NEW
+					//change server for each lang code
+					if(self::$mode_domain || self::$mode_domain_sef){
+						$ndomaine=JUri::getInstance();
+						$ndomaine->setHost(self::$lang_codes[$language->lang_code]->domain);
+						$server=$ndomaine->toString(array('scheme', 'host', 'port'));
+					}
+					
 
 					if (isset($cassociations[$language->lang_code]))
 					{
-						$link = JRoute::_($cassociations[$language->lang_code] . '&lang=' . $language->sef);
+						$link = JRoute::_($cassociations[$language->lang_code].'&lang='.$language->sef);
 						$doc->addHeadLink($server . $link, 'alternate', 'rel', array('hreflang' => $language->lang_code));
 					}
 					elseif (isset($associations[$language->lang_code]))
@@ -638,7 +869,7 @@ class PlgSystemLanguageFilter extends JPlugin
 						$item = $menu->getItem($associations[$language->lang_code]);
 
 						if ($item)
-						{
+						{			
 							if ($app->getCfg('sef'))
 							{
 								$link = JRoute::_('index.php?Itemid=' . $item->id . '&lang=' . $language->sef);
@@ -658,12 +889,24 @@ class PlgSystemLanguageFilter extends JPlugin
 			{
 				foreach (JLanguageHelper::getLanguages() as $language)
 				{
-					if (!JLanguage::exists($language->lang_code))
+					if (
+					!JLanguage::exists($language->lang_code)
+					//if language is disabled because of user rights
+					|| !isset(self::$sefs[self::$lang_codes[$language->lang_code]->sef])
+					)
 					{
 						continue;
 					}
 
 					$item = $menu->getDefault($language->lang_code);
+					
+					//NEW
+					//change server for each lang code
+					if(self::$mode_domain || self::$mode_domain_sef){
+						$ndomaine=JUri::getInstance();
+						$ndomaine->setHost(self::$lang_codes[$language->lang_code]->domain);
+						$server=$ndomaine->toString(array('scheme', 'host', 'port'));
+					}
 
 					if ($item && $item->language != $active->language && $item->language != '*')
 					{

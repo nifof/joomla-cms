@@ -35,6 +35,8 @@ class LanguagesModelLanguages extends JModelList
 				'title', 'a.title',
 				'title_native', 'a.title_native',
 				'sef', 'a.sef',
+				'domain', 'a.domain',
+				'remove_sef', 'a.remove_sef',
 				'image', 'a.image',
 				'published', 'a.published',
 				'ordering', 'a.ordering',

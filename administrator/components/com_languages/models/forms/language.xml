@@ -40,6 +40,23 @@
 			required="true"
 			size="10"
 		/>
+		
+		<field name="domain" type="text"
+			description="COM_LANGUAGES_FIELD_DOMAIN_DESC"
+			label="COM_LANGUAGES_FIELD_DOMAIN_LABEL"
+			required="false"
+			size="40"
+		/>
+		
+		<field name="remove_sef" type="radio"
+			description="COM_LANGUAGES_FIELD_REMOVE_DEFAULT_PREFIX_DESC"
+			label="COM_LANGUAGES_FIELD_REMOVE_DEFAULT_PREFIX_LABEL"
+			default="1"
+			class="btn-group btn-group-yesno"
+		>
+			<option value="1">JYES</option>
+			<option value="0">JNO</option>
+		</field>
 
 		<field name="image" type="filelist"
 			description="COM_LANGUAGES_FIELD_IMAGE_DESC"
